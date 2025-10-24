@@ -427,7 +427,7 @@ A shortcut for `query` that always uses  [SQL++][N1QL] syntax and includes the `
 
 
 
-[LITECORE]: https://github.com/couchbase/couchbase-lite-core
+[LITECORE]: vendor/couchbase-lite-core
 [CBL]: https://www.couchbase.com/products/lite
 [N1QL]: https://docs.couchbase.com/server/current/n1ql/n1ql-language-reference/index.html
 [QUERY]: https://github.com/couchbase/couchbase-lite-core/wiki/JSON-Query-Schema
