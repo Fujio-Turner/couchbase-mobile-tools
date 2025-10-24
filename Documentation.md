@@ -45,6 +45,7 @@ Later sections document each subcommand and its specific parameters.
 | `reindex`      | Rebuild indexes, which may improve performance ✍️              |
 | `revs`         | List the revisions of a document                               |
 | `rm`           | Delete documents ✍️                                            |
+| `rmcoll`       | Delete a collection ✍️                                         |
 | `rmindex`      | Remove an index ✍️                                             |
 | `select`       | Run queries, using [SQL++][N1QL] syntax                        |
 
@@ -408,6 +409,27 @@ Deletes a document.
 `rm` _DOCID_
 
 > NOTE: In the interactive mode, this command will fail unless `cblite` was invoked with the `--writeable` or `--create` flag.
+
+## rmcoll ✍️
+
+Deletes a collection and all documents within it.
+
+`cblite rmcoll` _databasepath_ _COLLECTION_PATH_
+
+`rmcoll` _COLLECTION_PATH_
+
+_COLLECTION_PATH_ can be either a collection name in the default scope, or `scope_name/collection_name`.
+
+**Warning:** This permanently deletes all documents in the collection!
+
+**Examples:**
+```sh
+# Delete a collection in the default scope
+cblite --writeable mydb.cblite2 rmcoll "us\prices"
+
+# Delete a collection with scope
+cblite --writeable mydb.cblite2 rmcoll inventory/products
+```
 
 ## rmindex ✍️
 
