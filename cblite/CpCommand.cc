@@ -182,6 +182,16 @@ public:
         });
     }
 
+    bool processFlag(const std::string &flag,
+                     const std::initializer_list<FlagSpec> &specs) override {
+        // Handle --collection flag locally to allow multiple collection arguments
+        if (flag == "--collection" || flag == "--collections") {
+            collectionFlag();
+            return true;
+        }
+        // Delegate other flags to parent
+        return CBLiteCommand::processFlag(flag, specs);
+    }
 
     void runSubcommand() override {
         // Read params:
@@ -189,8 +199,6 @@ public:
             {"--bidi",      [&]{_bidi = true;}},
             {"--careful",   [&]{_failOnError = true;}},
             {"--cert",      [&]{certFlag();}},
-            {"--collection",[&]{collectionFlag();}},
-            {"--collections",[&]{collectionFlag();}},
             {"--continuous",[&]{_continuous = true;}},
             {"--existing",  [&]{_createDst = false;}},
             {"--jsonid",    [&]{_jsonIDProperty = nextArg("JSON-id property");}},
