@@ -53,6 +53,7 @@ public:
     // Main handlers:
     void usage() override;
     int run() override;
+    void displayVersion() override;
 
 protected:
     virtual void addLineCompletions(ArgumentTokenizer&, std::function<void(const std::string&)>) override;

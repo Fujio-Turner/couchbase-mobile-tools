@@ -18,6 +18,7 @@
 
 #include "CBLiteTool.hh"
 #include "CBLiteCommand.hh"
+#include "repo_version.h"
 
 using namespace litecore;
 using namespace std;
@@ -26,6 +27,23 @@ using namespace fleece;
 int main(int argc, const char * argv[]) {
     CBLiteTool tool;
     return tool.main(argc, argv);
+}
+
+
+void CBLiteTool::displayVersion() {
+    alloc_slice version = c4_getVersion();
+    cout << "cblite tool for Couchbase Lite (LiteCore) " << version;
+    
+    // Show git tag if available
+    string tag(GitTag);
+    if (!tag.empty())
+        cout << " [" << tag << "]";
+    cout << "\n";
+    
+    cout << "LiteCore git: " << GitCommit << "\n";
+    if (string(GitBranch) != "HEAD")
+        cout << "Branch: " << GitBranch << "\n";
+    ::exit(0);
 }
 
 
