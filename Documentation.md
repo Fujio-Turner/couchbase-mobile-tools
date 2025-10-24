@@ -165,13 +165,15 @@ In interactive mode, the database path is already known, so it's used as the sou
 | `-cacert` _file_             | Use X.509 CA certificate(s) in _file_ (PEM or DER format) to validate the server TLS certificate. Necessary if the server has a self-signed certificate. |
 | `--careful`                  | Abort on any error. |
 | `-cert` _file_               | Use X.509 certificate in _file_ (PEM or DER format) for TLS _client_ authentication. Requires `--key`. 👔 |
-| `--collection` *name*        | Adds a collection to the list of collections to be replicated. |
+| `--channels` _channel,..._   | Channel filter for the most recent `--collection`. Only documents in the specified channels will be replicated. Separate multiple channels with commas. (Sync Gateway only) |
+| `--collection` *name*        | Adds a collection to the list of collections to be replicated. Can be used multiple times. |
 | `--continuous`               | Continuous replication (never stops!) |
 | `--existing` or `-x`         | Fail if _destination_ doesn't already exist.|
 | `--idprefix` *str*           | When `--jsonid` is in use, adds *str* as a prefix to the document ID. |
 | `--jsonid` _property_        | JSON property to use for document ID.\*\* |
 | `--key` _file_               | Use private key in _file_ for TLS client authentication. Requires `--cert`. 👔 |
 | `--limit` _n_                | Stop after _n_ documents. (Replicator ignores this.) |
+| `--oidc` _file_              | Use OIDC bearer token from _file_ for authentication. The token is sent as `Authorization: Bearer {token}` header. Cannot be combined with `--user`, `--token`, or `--cert`. |
 | `--replicate`                | Forces use of replicator when copying local-to-local. 👔 |
 | `--rootcerts` _file_         | Add trusted root certificates from a PEM or DER file. |
 | `--token` *tok*              | Session authentication token for remote database. |
@@ -179,6 +181,39 @@ In interactive mode, the database path is already known, so it's used as the sou
 | `--verbose` or `-v`          | Log progress information. Repeat flag for more verbosity. |
 
 \*\* `--jsonid` works as follows: When _source_ is JSON, this is a property name/path whose value will be used as the document ID. (If omitted, documents are given UUIDs.) When _destination_ is JSON, this is a property name that will be added to the JSON, whose value is the document's ID. (If this flag is omitted, the value defaults to `_id`.)
+
+### Examples
+
+**Pull with channel filters on multiple collections:**
+```sh
+cblite pull mydb.cblite2 \
+  --user bob:password \
+  --collection us.prices --channels online \
+  --collection us.jobs --channels "atl:100,bob" \
+  wss://sync-gateway.example.com/mydb
+```
+
+**Push using OIDC authentication:**
+```sh
+# First, save your OIDC bearer token to a file
+echo "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..." > ~/oidc_token.txt
+
+# Then use it for replication
+cblite push mydb.cblite2 \
+  --oidc ~/oidc_token.txt \
+  --collection us.orders \
+  wss://sync-gateway.example.com/mydb
+```
+
+**Pull with OIDC and channel filters:**
+```sh
+cblite pull mydb.cblite2 \
+  --oidc ~/.config/sg_token \
+  --collection us.prices --channels "online,retail" \
+  --collection us.inventory --channels warehouse \
+  --continuous --verbose \
+  wss://sync-gateway.example.com/mydb
+```
 
 ## decrypt ✍️ 👔
 
@@ -289,6 +324,43 @@ Creates an index.
 | `--json`   | Use JSON query syntax for *EXPRESSION* instead of  [SQL++][N1QL]. |
 | `--fts`    | Create a Full-Text-Search index                                   |
 | `--vector` | Create a vector index 👔                                          |
+
+### Examples
+
+**Create a simple value index on a property:**
+```sh
+cblite mkindex mydb.cblite2 byCreatedAt createdAt
+```
+
+**Create a composite index using JSON syntax:**
+```sh
+cblite mkindex --json mydb.cblite2 findByTypeAndDate \
+  '{"what":[[".createdAt"],[".docType"]]}'
+```
+
+**Create an index on nested properties:**
+```sh
+cblite mkindex mydb.cblite2 byAddress "address.city"
+```
+
+**Create a Full-Text-Search index:**
+```sh
+cblite mkindex --fts mydb.cblite2 searchDescription description
+```
+
+**Using an index in queries:**
+```sh
+# The query optimizer will automatically use the index when appropriate
+cblite query mydb.cblite2 \
+  'SELECT META().id FROM _ WHERE docType = "invoice" AND createdAt IS NOT MISSING ORDER BY createdAt'
+
+# Use --explain to verify the index is being used
+cblite query --explain mydb.cblite2 \
+  'SELECT * FROM _ WHERE docType = "invoice" ORDER BY createdAt'
+# Look for "USING INDEX findByTypeAndDate" in the output
+```
+
+> **Note:** When using `COUNT(*)` aggregates, the query optimizer may choose a full table scan instead of using an index if it determines this is more efficient. To ensure your query can use an index, include indexed properties in the WHERE clause and ORDER BY clause.
 
 #### FTS index flags:
 

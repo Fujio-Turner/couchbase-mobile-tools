@@ -444,12 +444,18 @@ C4ReplicatorParameters DbEndpoint::replicatorParameters(C4ReplicatorMode push, C
             enc.writeData(_rootCerts);
         }
         
-        // User-Agent (Required by AWS Capella: CBL-4204)
+        // Extra headers (User-Agent required by AWS Capella: CBL-4204, plus OIDC if configured)
         enc.writeKey(slice(kC4ReplicatorOptionExtraHeaders));
         enc.beginDict();
         enc.writeKey(slice("User-Agent"));
         alloc_slice version = c4_getVersion();
         enc.writeString(stringprintf("cblite/%.*s", SPLAT(version)));
+        
+        // Add OIDC Authorization header if token is provided
+        if (!_oidcToken.empty()) {
+            enc.writeKey(slice("Authorization"));
+            enc.writeString(stringprintf("Bearer %s", _oidcToken.c_str()));
+        }
         enc.endDict();
 
         enc.endDict();

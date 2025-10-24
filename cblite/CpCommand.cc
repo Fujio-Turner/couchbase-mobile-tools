@@ -91,6 +91,7 @@ public:
         "    --collection <[scope.]name]> : Collection(s) to be replicated; separate with commas.\n"
         "    --channels <channel,...> : Channel filter for the most recent --collection (Sync Gateway only).\n"
         "    --continuous : Continuous replication.\n"
+        "    --oidc <file> : Use OIDC bearer token from file for authentication.\n"
         "    --existing or -x : Fail if DESTINATION doesn't already exist.\n"
         "    --idprefix <str> : When --jsonid is in use, adds a prefix to the document ID.\n"
         "    --jsonid <property> : JSON property name to map to document IDs. (Defaults to \"_id\".)\n"
@@ -145,7 +146,8 @@ public:
         "    --cert <file> : Use X.509 certificate in <file> for TLS client authentication.\n"
         "    --collection <[scope.]name]> : Adds a collection to the list of collections to be replicated.\n"
         "    --channels <channel,...> : Channel filter for the most recent --collection (Sync Gateway only).\n"
-            "    --continuous : Continuous replication while in interactive mode.\n"
+        "    --continuous : Continuous replication while in interactive mode.\n"
+        "    --oidc <file> : Use OIDC bearer token from file for authentication.\n"
         "    --key <file> : Use private key in <file> for TLS client authentication.\n"
         "    --user <name>[:<password>] : HTTP Basic auth credentials for remote database.\n"
         "           (If password is not given, the tool will prompt you to enter it.)\n"
@@ -207,6 +209,9 @@ public:
             return true;
         } else if (flag == "--channels") {
             channelsFlag();
+            return true;
+        } else if (flag == "--oidc") {
+            _oidcTokenFile = nextArg("OIDC token file path");
             return true;
         }
         // Delegate other flags to parent
@@ -337,8 +342,39 @@ public:
 
                 if(!_user.empty())
                     fail("Cannot use both session token and HTTP auth");
+                
+                if(!_oidcTokenFile.empty())
+                    fail("Cannot use both session token and OIDC token");
 
                 localDB->setSessionToken(_sessionToken);
+            }
+            
+            if(!_oidcTokenFile.empty()) {
+                if (cert)
+                    fail("Cannot use both client cert and OIDC token");
+                
+                if(!_user.empty())
+                    fail("Cannot use both HTTP auth and OIDC token");
+                
+                if(!_sessionToken.empty())
+                    fail("Cannot use both session token and OIDC token");
+                
+                // Read OIDC token from file
+                try {
+                    alloc_slice tokenData = readFile(_oidcTokenFile);
+                    string token(tokenData);
+                    // Trim whitespace and newlines
+                    auto start = token.find_first_not_of(" \t\r\n");
+                    auto end = token.find_last_not_of(" \t\r\n");
+                    if (start != string::npos && end != string::npos) {
+                        token = token.substr(start, end - start + 1);
+                    }
+                    if (token.empty())
+                        fail("OIDC token file is empty");
+                    localDB->setOIDCToken(token);
+                } catch (const exception &x) {
+                    fail("Error reading OIDC token file: " + string(x.what()));
+                }
             }
         } else {
             copyLocalDBs = dbToDb;
@@ -450,6 +486,7 @@ private:
     std::string             _rootCertsFile;
     string                  _user;
     string                  _sessionToken;
+    string                  _oidcTokenFile;
     optional<FilePath>      _tempDir;
     std::vector<CollectionName> _collections;
     std::vector<std::vector<string>> _collectionChannels;  // Per-collection channel filters
