@@ -18,3 +18,5 @@ gen_defaults/csharp
 __pycache__/
 cmake-build-*
 /vendor/couchbase-lite-core-EE/
+
+.DS_Store
