@@ -91,6 +91,7 @@ void CBLiteTool::usage() {
     "    reindex        : drop and recreates an index\n"
     "    revs           : show the revisions of a document\n"
     "    rm             : delete documents\n"
+    "    rmcoll         : delete a collection\n"
     "    rmindex        : delete an index\n"
     "\n"
     "    Most subcommands take their own flags or parameters, following the name.\n"
@@ -202,6 +203,7 @@ static constexpr struct {const char* name; ToolFactory factory;} kSubcommands[] 
     {"reindex", newReindexCommand},
     {"revs",    newRevsCommand},
     {"rm",      newRmCommand},
+    {"rmcoll",  newRmCollCommand},
     {"rmindex", newRmIndexCommand},
     {"SELECT",  newSelectCommand},
     {"select",  newSelectCommand},
