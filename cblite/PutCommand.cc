@@ -18,10 +18,15 @@
 
 #include "CBLiteCommand.hh"
 #include "fleece/FLExpert.h"
+#include "c4BlobStore.h"
+#include "c4DocumentTypes.h"
+#include "c4Document+Fleece.h"
 #include <algorithm>
+#include <fstream>
 
 using namespace std;
 using namespace litecore;
+using namespace fleece;
 
 
 class PutCommand : public CBLiteCommand {
@@ -41,6 +46,10 @@ public:
                 writeUsageCommand("put", true, "DOCID \"JSON\"");
                 cerr <<
                 "  Updates a document.\n"
+                "    --attach <path> <name> [property] : Attach a file as a blob.\n"
+                "        <path>: Path to the file to attach\n"
+                "        <name>: Property name for the blob (default: 'blobs')\n"
+                "        [property]: Optional nested property path (e.g., 'attachments.photo')\n"
                 "    --create : Document must not exist\n"
                 "    --delete : Deletes the document (and JSON is optional); same as `rm` subcommand\n"
                 "    --purge  : Purges the document (deletes without leaving a tombstone)\n"
@@ -62,9 +71,132 @@ public:
     }
 
 
+    struct Attachment {
+        string filePath;
+        string propertyName;
+    };
+
+    void attachFlag() {
+        string filePath = nextArg("file path");
+        string propertyName = peekNextArg();
+        if (propertyName.empty() || propertyName.starts_with('-'))
+            propertyName = "blobs";
+        else
+            propertyName = nextArg("property name");
+        _attachments.push_back({filePath, propertyName});
+    }
+
+    alloc_slice encodeJSONWithBlobs(slice jsonData, C4Error* c4error) {
+        // Parse original JSON into a Fleece doc
+        FLError flErr;
+        FLDoc flDoc = FLDoc_FromJSON(FLSlice{jsonData.buf, jsonData.size}, &flErr);
+        if (!flDoc) {
+            if (c4error) { c4error->domain = LiteCoreDomain; c4error->code = kC4ErrorInvalidParameter; }
+            return nullslice;
+        }
+        FLValue rootVal = FLDoc_GetRoot(flDoc);
+        FLDict root = FLValue_AsDict(rootVal);
+        if (!root) {
+            FLDoc_Release(flDoc);
+            if (c4error) { c4error->domain = LiteCoreDomain; c4error->code = kC4ErrorInvalidParameter; }
+            return nullslice;
+        }
+
+        // Get blob store
+        C4BlobStore* blobStore = c4db_getBlobStore(_db, c4error);
+        if (!blobStore) {
+            FLDoc_Release(flDoc);
+            return nullslice;
+        }
+
+        // Begin new encoding with the DB's shared encoder
+        FLEncoder enc = c4db_getSharedFleeceEncoder(_db);
+        FLEncoder_BeginDict(enc, 0);
+
+        // Copy existing properties
+        FLDictIterator it;
+        FLDictIterator_Begin(root, &it);
+        for (FLValue v = FLDictIterator_GetValue(&it); v; v = FLDictIterator_GetValue(&it)) {
+            FLString k = FLDictIterator_GetKeyString(&it);
+            FLEncoder_WriteKey(enc, k);
+            FLEncoder_WriteValue(enc, v);
+            FLDictIterator_Next(&it);
+        }
+
+        // Attach blobs at top-level property names
+        for (const auto& att : _attachments) {
+            // Read file
+            alloc_slice fileData = readFile(att.filePath);
+            if (!fileData) {
+                FLDoc_Release(flDoc);
+                fail("Couldn't read attachment file: " + att.filePath);
+            }
+
+            // Create blob
+            C4BlobKey blobKey;
+            if (!c4blob_create(blobStore, (C4Slice)fileData, nullptr, &blobKey, c4error)) {
+                FLDoc_Release(flDoc);
+                return nullslice;
+            }
+
+            // Guess content type
+            string contentType = "application/octet-stream";
+            size_t dot = att.filePath.find_last_of('.');
+            if (dot != string::npos) {
+                string ext = att.filePath.substr(dot + 1);
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                if (ext == "jpg" || ext == "jpeg") contentType = "image/jpeg";
+                else if (ext == "png") contentType = "image/png";
+                else if (ext == "gif") contentType = "image/gif";
+                else if (ext == "pdf") contentType = "application/pdf";
+                else if (ext == "txt") contentType = "text/plain";
+                else if (ext == "json") contentType = "application/json";
+            }
+
+            // Blob metadata
+            C4SliceResult digestStr = c4blob_keyToString(blobKey);
+
+            // Write blob property
+            FLString propKey = {(const char*)att.propertyName.data(), att.propertyName.size()};
+            FLEncoder_WriteKey(enc, propKey);
+            FLEncoder_BeginDict(enc, 4);
+
+            FLEncoder_WriteKey(enc, FLStr(kC4ObjectTypeProperty));
+            FLEncoder_WriteString(enc, FLStr(kC4ObjectType_Blob));
+
+            FLEncoder_WriteKey(enc, FLStr(kC4BlobDigestProperty));
+            FLEncoder_WriteString(enc, FLSlice{digestStr.buf, digestStr.size});
+
+            FLEncoder_WriteKey(enc, FLStr("length"));
+            FLEncoder_WriteUInt(enc, (uint64_t)fileData.size);
+
+            FLEncoder_WriteKey(enc, FLStr("content_type"));
+            FLString ctype = {(const char*)contentType.data(), contentType.size()};
+            FLEncoder_WriteString(enc, ctype);
+
+            FLEncoder_EndDict(enc);
+            c4slice_free(digestStr);
+        }
+
+        FLEncoder_EndDict(enc);
+
+        // Finish
+        FLSliceResult out = FLEncoder_Finish(enc, &flErr);
+        FLDoc_Release(flDoc);
+        if (!out.buf) {
+            if (c4error) { c4error->domain = LiteCoreDomain; c4error->code = kC4ErrorCorruptData; }
+            return nullslice;
+        }
+
+        alloc_slice result(out);
+        FLSliceResult_Release(out);
+        return result;
+    }
+
     void runSubcommand() override {
         // Read params:
         processFlags({
+            {"--attach", [&]{attachFlag();}},
             {"--create", [&]{_putMode = kCreate;}},
             {"--update", [&]{_putMode = kUpdate;}},
             {"--delete", [&]{_putMode = kDelete;}},
@@ -112,12 +244,26 @@ public:
                     FLSliceResult_Release(errMsg);
                     fail("Invalid JSON: " + message);
                 }
-                body = c4db_encodeJSON(_db, json, &error);
+                
+                // If attachments are specified, modify the JSON to include them
+                if (!_attachments.empty()) {
+                    body = encodeJSONWithBlobs(json, &error);
+                } else {
+                    body = c4db_encodeJSON(_db, json, &error);
+                }
+                
                 if (!body)
                     fail("Couldn't encode body", error);
             }
 
-            doc = c4doc_update(doc, body, (_putMode == kDelete ? kRevDeleted : 0), &error);
+            // Set flags: deleted flag for deletes, attachment flag for blobs
+            C4RevisionFlags flags = 0;
+            if (_putMode == kDelete)
+                flags |= kRevDeleted;
+            if (!_attachments.empty())
+                flags |= kRevHasAttachments;
+
+            doc = c4doc_update(doc, body, flags, &error);
             if (!doc)
                 fail("Couldn't save document", error);
         }
@@ -138,12 +284,16 @@ public:
             if (revID.size() > 10)
                 revID.resize(10);
             cout << verb << " `" << docID << "`, new revision " << revID
-                 << " (sequence " << doc->sequence << ")\n";
+                 << " (sequence " << doc->sequence << ")";
+            if (!_attachments.empty())
+                cout << " with " << _attachments.size() << " blob(s)";
+            cout << "\n";
         }
     }
 
 private:
     PutMode                 _putMode {kPut};
+    vector<Attachment>      _attachments;
 };
 
 

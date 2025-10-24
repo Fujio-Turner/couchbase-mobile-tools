@@ -414,10 +414,38 @@ Creates or updates a document.
 
 | Flag    | Effect  |
 |---------|---------|
+| `--attach` _file_ _propname_ | Attach a file as a blob to the document. _file_ is the path to the file, _propname_ is the property name (defaults to "blobs" if omitted). Can be used multiple times. |
 | `--create` | Only create a document; fails if the document exists. |
 | `--update` | Only update an existing document; fails if the document does not exist. |
 
 **The document body JSON must be a single argument**; put quotes around it to ensure that and to avoid misinterpretation of special characters. [JSON5][JSON5] syntax is allowed.
+
+### Examples
+
+**Create a document with a blob attachment:**
+```sh
+# Create document with avatar attachment
+cblite --writeable mydb.cblite2 put --attach /path/to/photo.jpg avatar doc123 '{"name":"Bob"}'
+
+# Multiple attachments
+cblite --writeable mydb.cblite2 put \
+  --attach /path/to/resume.pdf resume \
+  --attach /path/to/photo.jpg photo \
+  doc456 '{"name":"Alice","role":"developer"}'
+```
+
+The blob will be stored in the document as:
+```json
+{
+  "avatar": {
+    "@type": "blob",
+    "content_type": "image/jpeg",
+    "digest": "sha1-...",
+    "length": 12345
+  },
+  "name": "Bob"
+}
+```
 
 ## query
 
