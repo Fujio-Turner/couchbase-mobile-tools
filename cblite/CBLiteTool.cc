@@ -35,9 +35,11 @@ void CBLiteTool::displayVersion() {
     cout << "cblite tool for Couchbase Lite (LiteCore) " << version;
     
     // Show git tag if available
+#ifdef GitTag
     string tag(GitTag);
     if (!tag.empty())
         cout << " [" << tag << "]";
+#endif
     cout << "\n";
     
     cout << "LiteCore git: " << GitCommit << "\n";
