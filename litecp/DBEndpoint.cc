@@ -22,6 +22,7 @@
 #include "Stopwatch.hh"
 #include "fleece/Mutable.hh"
 #include "Error.hh"
+#include "c4ReplicatorTypes.h"
 #include <algorithm>
 #include <thread>
 
@@ -285,10 +286,31 @@ void DbEndpoint::startReplicationWith(RemoteEndpoint &remote, bool pushing) {
     cout << "...\n";
     C4ReplicatorParameters params = replicatorParameters(pushMode, pullMode);
 
-    // This must be done here to avoid this vector going out of scope
+    // This must be done here to avoid these vectors going out of scope
     std::vector<C4ReplicationCollection> replicationCollections;
-    for (auto& coll : _collectionSpecs)
-        replicationCollections.push_back({coll, pushMode, pullMode });
+    std::vector<alloc_slice> optionsSlices;  // Keep options alive
+    
+    for (size_t i = 0; i < _collectionSpecs.size(); ++i) {
+        C4ReplicationCollection replColl = {_collectionSpecs[i], pushMode, pullMode};
+        
+        // Add channel filter if specified for this collection
+        if (i < _collectionChannels.size() && !_collectionChannels[i].empty()) {
+            Encoder enc;
+            enc.beginDict();
+            enc.writeKey(slice(kC4ReplicatorOptionChannels));
+            enc.beginArray();
+            for (const string& channel : _collectionChannels[i]) {
+                enc.writeString(channel);
+            }
+            enc.endArray();
+            enc.endDict();
+            optionsSlices.push_back(enc.finish());
+            replColl.optionsDictFleece = optionsSlices.back();
+        }
+        
+        replicationCollections.push_back(replColl);
+    }
+    
     params.collectionCount = replicationCollections.size();
     params.collections = replicationCollections.data();
     

@@ -48,6 +48,7 @@ public:
     void setClientCert(fleece::alloc_slice client)  {_clientCert = client;}
     void setClientCertKey(fleece::alloc_slice key)  {_clientCertKey = key;}
     void setClientCertKeyPassword(fleece::alloc_slice p)  {_clientCertKeyPassword = p;}
+    void setCollectionChannels(const std::vector<std::vector<std::string>>& channels) {_collectionChannels = channels;}
 
     virtual void copyTo(Endpoint *dst, uint64_t limit) override;
     virtual void writeJSON(fleece::slice docID, fleece::slice json) override;
@@ -100,6 +101,7 @@ private:
     fleece::alloc_slice _clientCert, _clientCertKey, _clientCertKeyPassword;
     fleece::alloc_slice _options;
     std::vector<CollectionName> _collectionSpecs;
+    std::vector<std::vector<std::string>> _collectionChannels;  // Per-collection channel filters
     c4::ref<C4Replicator> _replicator;
 
     static constexpr unsigned kMaxTransactionSize = 100000;
