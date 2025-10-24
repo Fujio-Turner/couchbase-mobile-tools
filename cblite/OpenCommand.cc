@@ -123,6 +123,7 @@ public:
         "    reindex\n"
         "    revs " << it("DOCID") << "\n"
         "    rm " << it("DOCID") << "\n"
+        "    rmcoll " << it("COLLECTION_PATH") << "\n"
         "    rmindex " << it("INDEX_NAME") << "\n"
         "    select " << it("[FLAGS] N1QLQUERY") << "\n"
         //  "    sql " << it("QUERY") << "\n"
