@@ -44,10 +44,12 @@ public:
     using credentials = std::pair<std::string, std::string>;
     void setCredentials(const credentials &cred)    {_credentials = cred;}
     void setSessionToken(const std::string &token)  {_sessionToken = token;}
+    void setOIDCToken(const std::string &token)     {_oidcToken = token;}
     void setRootCerts(fleece::alloc_slice rootCerts){_rootCerts = rootCerts;}
     void setClientCert(fleece::alloc_slice client)  {_clientCert = client;}
     void setClientCertKey(fleece::alloc_slice key)  {_clientCertKey = key;}
     void setClientCertKeyPassword(fleece::alloc_slice p)  {_clientCertKeyPassword = p;}
+    void setCollectionChannels(const std::vector<std::vector<std::string>>& channels) {_collectionChannels = channels;}
 
     virtual void copyTo(Endpoint *dst, uint64_t limit) override;
     virtual void writeJSON(fleece::slice docID, fleece::slice json) override;
@@ -96,10 +98,12 @@ private:
     unsigned _maxRetries = 0;       // no retries by default
     credentials _credentials;
     std::string _sessionToken;
+    std::string _oidcToken;
     fleece::alloc_slice _rootCerts;
     fleece::alloc_slice _clientCert, _clientCertKey, _clientCertKeyPassword;
     fleece::alloc_slice _options;
     std::vector<CollectionName> _collectionSpecs;
+    std::vector<std::vector<std::string>> _collectionChannels;  // Per-collection channel filters
     c4::ref<C4Replicator> _replicator;
 
     static constexpr unsigned kMaxTransactionSize = 100000;

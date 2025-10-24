@@ -48,6 +48,7 @@ target_include_directories( cblite PRIVATE
     ${PROJECT_SOURCE_DIR}/../vendor/couchbase-lite-core/Networking
     ${PROJECT_SOURCE_DIR}/../vendor/couchbase-lite-core/Networking/HTTP
     ${PROJECT_SOURCE_DIR}/../vendor/couchbase-lite-core/REST
+    ${CMAKE_BINARY_DIR}/generated_headers
 )
 
 target_compile_definitions(cblite PRIVATE -DCMAKE)

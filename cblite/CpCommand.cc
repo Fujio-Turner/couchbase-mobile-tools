@@ -89,7 +89,9 @@ public:
         "    --careful : Abort on any error.\n"
         "    --cert <file> : Use X.509 certificate in <file> for TLS client authentication.\n"
         "    --collection <[scope.]name]> : Collection(s) to be replicated; separate with commas.\n"
+        "    --channels <channel,...> : Channel filter for the most recent --collection (Sync Gateway only).\n"
         "    --continuous : Continuous replication.\n"
+        "    --oidc <file> : Use OIDC bearer token from file for authentication.\n"
         "    --existing or -x : Fail if DESTINATION doesn't already exist.\n"
         "    --idprefix <str> : When --jsonid is in use, adds a prefix to the document ID.\n"
         "    --jsonid <property> : JSON property name to map to document IDs. (Defaults to \"_id\".)\n"
@@ -143,7 +145,9 @@ public:
         "    --cacert <file> : Use X.509 certificates in <file> to validate server TLS cert.\n"
         "    --cert <file> : Use X.509 certificate in <file> for TLS client authentication.\n"
         "    --collection <[scope.]name]> : Adds a collection to the list of collections to be replicated.\n"
+        "    --channels <channel,...> : Channel filter for the most recent --collection (Sync Gateway only).\n"
         "    --continuous : Continuous replication while in interactive mode.\n"
+        "    --oidc <file> : Use OIDC bearer token from file for authentication.\n"
         "    --key <file> : Use private key in <file> for TLS client authentication.\n"
         "    --user <name>[:<password>] : HTTP Basic auth credentials for remote database.\n"
         "           (If password is not given, the tool will prompt you to enter it.)\n"
@@ -179,9 +183,40 @@ public:
         string rawNames = nextArg("collection name(s)");
         split(rawNames, ",", [&](string_view name) {
             _collections.emplace_back(string(name));
+            _collectionChannels.emplace_back();  // Empty channel list for this collection
         });
     }
 
+    void channelsFlag() {
+        if (_collections.empty())
+            failMisuse("--channels must be used after --collection");
+        
+        string rawChannels = nextArg("channel name(s)");
+        vector<string> channels;
+        split(rawChannels, ",", [&](string_view name) {
+            channels.emplace_back(string(name));
+        });
+        
+        // Apply channels to the most recently added collection
+        _collectionChannels.back() = channels;
+    }
+
+    bool processFlag(const std::string &flag,
+                     const std::initializer_list<FlagSpec> &specs) override {
+        // Handle --collection and --channels flags locally
+        if (flag == "--collection" || flag == "--collections") {
+            collectionFlag();
+            return true;
+        } else if (flag == "--channels") {
+            channelsFlag();
+            return true;
+        } else if (flag == "--oidc") {
+            _oidcTokenFile = nextArg("OIDC token file path");
+            return true;
+        }
+        // Delegate other flags to parent
+        return CBLiteCommand::processFlag(flag, specs);
+    }
 
     void runSubcommand() override {
         // Read params:
@@ -189,8 +224,6 @@ public:
             {"--bidi",      [&]{_bidi = true;}},
             {"--careful",   [&]{_failOnError = true;}},
             {"--cert",      [&]{certFlag();}},
-            {"--collection",[&]{collectionFlag();}},
-            {"--collections",[&]{collectionFlag();}},
             {"--continuous",[&]{_continuous = true;}},
             {"--existing",  [&]{_createDst = false;}},
             {"--jsonid",    [&]{_jsonIDProperty = nextArg("JSON-id property");}},
@@ -265,6 +298,10 @@ public:
                 failMisuse("Replication requires at least one database to be local");
             localDB->setBidirectional(_bidi);
             localDB->setContinuous(_continuous);
+            
+            // Set channel filters if specified
+            if (!_collectionChannels.empty())
+                localDB->setCollectionChannels(_collectionChannels);
 
             if (!_rootCertsFile.empty())
                 localDB->setRootCerts(readFile(_rootCertsFile));
@@ -305,8 +342,39 @@ public:
 
                 if(!_user.empty())
                     fail("Cannot use both session token and HTTP auth");
+                
+                if(!_oidcTokenFile.empty())
+                    fail("Cannot use both session token and OIDC token");
 
                 localDB->setSessionToken(_sessionToken);
+            }
+            
+            if(!_oidcTokenFile.empty()) {
+                if (cert)
+                    fail("Cannot use both client cert and OIDC token");
+                
+                if(!_user.empty())
+                    fail("Cannot use both HTTP auth and OIDC token");
+                
+                if(!_sessionToken.empty())
+                    fail("Cannot use both session token and OIDC token");
+                
+                // Read OIDC token from file
+                try {
+                    alloc_slice tokenData = readFile(_oidcTokenFile);
+                    string token(tokenData);
+                    // Trim whitespace and newlines
+                    auto start = token.find_first_not_of(" \t\r\n");
+                    auto end = token.find_last_not_of(" \t\r\n");
+                    if (start != string::npos && end != string::npos) {
+                        token = token.substr(start, end - start + 1);
+                    }
+                    if (token.empty())
+                        fail("OIDC token file is empty");
+                    localDB->setOIDCToken(token);
+                } catch (const exception &x) {
+                    fail("Error reading OIDC token file: " + string(x.what()));
+                }
             }
         } else {
             copyLocalDBs = dbToDb;
@@ -418,8 +486,10 @@ private:
     std::string             _rootCertsFile;
     string                  _user;
     string                  _sessionToken;
+    string                  _oidcTokenFile;
     optional<FilePath>      _tempDir;
     std::vector<CollectionName> _collections;
+    std::vector<std::vector<string>> _collectionChannels;  // Per-collection channel filters
 };
 
 
